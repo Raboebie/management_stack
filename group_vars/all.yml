@@ -1,0 +1,33 @@
+# InfluxDB 2.x
+influxdb_org: "monitoring"
+influxdb_bucket: "telegraf"
+influxdb_admin_user: "admin"
+influxdb_admin_password: "changeme_influx"    # change before deploying
+influxdb_admin_token: "my-super-secret-token" # change before deploying
+
+# Grafana
+grafana_admin_user: "admin"
+grafana_admin_password: "changeme_grafana"    # change before deploying
+
+# PostgreSQL (IcingaWeb2 + IcingaDB backend)
+postgres_user: "icinga"
+postgres_password: "changeme_postgres"        # change before deploying
+postgres_db: "icingadb"
+
+# Icinga2
+icinga2_api_user: "icingaweb2"
+icinga2_api_password: "changeme_icinga"       # change before deploying
+icinga2_ticket_salt: "changeme_ticket_salt"   # change before deploying
+
+# Paths
+rocm_path: "/opt/rocm"
+stack_dir: "/home/dihan/monitoring-stack/stack"
+
+# Ports
+grafana_port: 3000
+influxdb_port: 8086
+icingaweb2_port: 8080
+icinga2_api_port: 5665
+
+# Docker network
+stack_network: "monitoring"

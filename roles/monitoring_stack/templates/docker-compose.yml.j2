@@ -1,0 +1,179 @@
+services:
+  # ── InfluxDB 2.x ─────────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "{{ influxdb_port }}:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: "{{ influxdb_admin_user }}"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "{{ influxdb_admin_password }}"
+      DOCKER_INFLUXDB_INIT_ORG: "{{ influxdb_org }}"
+      DOCKER_INFLUXDB_INIT_BUCKET: "{{ influxdb_bucket }}"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "{{ influxdb_admin_token }}"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    networks:
+      - {{ stack_network }}
+
+  # ── Grafana ──────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "{{ grafana_port }}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - influxdb
+    networks:
+      - {{ stack_network }}
+
+  # ── Telegraf ─────────────────────────────────────────────────────────────
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    restart: unless-stopped
+    privileged: true
+    pid: host
+    network_mode: host
+    environment:
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_ETC: /hostfs/etc
+      HOST_RUN: /hostfs/run
+      HOST_MOUNT_PREFIX: /hostfs
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /proc:/hostfs/proc:ro
+      - /sys:/hostfs/sys:ro
+      - /etc:/hostfs/etc:ro
+      - /run:/hostfs/run:ro
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+      - {{ rocm_path }}:{{ rocm_path }}:ro
+
+  # ── PostgreSQL (IcingaWeb2 + IcingaDB backend) ──────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "{{ postgres_user }}"
+      POSTGRES_PASSWORD: "{{ postgres_password }}"
+      POSTGRES_DB: "{{ postgres_db }}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - {{ stack_network }}
+
+  # ── Redis (IcingaDB state backend) ──────────────────────────────────────
+  icingadb-redis:
+    image: redis:7
+    container_name: icingadb-redis
+    restart: unless-stopped
+    networks:
+      - {{ stack_network }}
+
+  # ── Icinga2 ──────────────────────────────────────────────────────────────
+  icinga2:
+    image: icinga/icinga2:latest
+    container_name: icinga2
+    restart: unless-stopped
+    ports:
+      - "{{ icinga2_api_port }}:5665"
+    environment:
+      ICINGA_MASTER: 1
+      ICINGA_CN: icinga2-master
+    volumes:
+      - icinga2-data:/data
+      - ./icinga2/features-enabled/influxdb2.conf:/etc/icinga2/features-enabled/influxdb2.conf:ro
+      - ./icinga2/conf.d/constants.conf:/etc/icinga2/conf.d/constants.conf:ro
+    depends_on:
+      - influxdb
+      - icingadb-redis
+    networks:
+      - {{ stack_network }}
+
+  # ── IcingaDB ─────────────────────────────────────────────────────────────
+  icingadb:
+    image: icinga/icingadb:latest
+    container_name: icingadb
+    restart: unless-stopped
+    environment:
+      ICINGADB_REDIS_HOST: icingadb-redis
+      ICINGADB_DATABASE_HOST: postgres
+      ICINGADB_DATABASE_PORT: "5432"
+      ICINGADB_DATABASE_DATABASE: "{{ postgres_db }}"
+      ICINGADB_DATABASE_USER: "{{ postgres_user }}"
+      ICINGADB_DATABASE_PASSWORD: "{{ postgres_password }}"
+      ICINGADB_DATABASE_TYPE: pgsql
+    depends_on:
+      - icinga2
+      - icingadb-redis
+      - postgres
+    networks:
+      - {{ stack_network }}
+
+  # ── IcingaWeb2 ───────────────────────────────────────────────────────────
+  icingaweb2:
+    image: icinga/icingaweb2:latest
+    container_name: icingaweb2
+    restart: unless-stopped
+    ports:
+      - "{{ icingaweb2_port }}:8080"
+    environment:
+      icingaweb.enabledModules: icingadb
+      icingaweb.passwords.icingaweb2.icingaadmin: "{{ icinga2_api_password }}"
+      icingaweb.authentication.icingaweb2.backend: db
+      icingaweb.authentication.icingaweb2.resource: icingaweb_db
+      icingaweb.config.logging.log: php
+      icingaweb.groups.icingaweb2.backend: db
+      icingaweb.groups.icingaweb2.resource: icingaweb_db
+      icingaweb.roles.Administrators.users: icingaadmin
+      icingaweb.roles.Administrators.permissions: "*"
+      icingaweb.resources.icingaweb_db.type: db
+      icingaweb.resources.icingaweb_db.db: pgsql
+      icingaweb.resources.icingaweb_db.host: postgres
+      icingaweb.resources.icingaweb_db.port: "5432"
+      icingaweb.resources.icingaweb_db.dbname: "{{ postgres_db }}"
+      icingaweb.resources.icingaweb_db.username: "{{ postgres_user }}"
+      icingaweb.resources.icingaweb_db.password: "{{ postgres_password }}"
+      icingaweb.modules.icingadb.config.icingadb.resource: icingadb
+      icingaweb.modules.icingadb.redis.redis1.host: icingadb-redis
+      icingaweb.modules.icingadb.commandtransports.icinga2.transport: api
+      icingaweb.modules.icingadb.commandtransports.icinga2.host: icinga2
+      icingaweb.modules.icingadb.commandtransports.icinga2.port: "5665"
+      icingaweb.modules.icingadb.commandtransports.icinga2.username: "{{ icinga2_api_user }}"
+      icingaweb.modules.icingadb.commandtransports.icinga2.password: "{{ icinga2_api_password }}"
+      icingaweb.resources.icingadb.type: db
+      icingaweb.resources.icingadb.db: pgsql
+      icingaweb.resources.icingadb.host: postgres
+      icingaweb.resources.icingadb.port: "5432"
+      icingaweb.resources.icingadb.dbname: "{{ postgres_db }}"
+      icingaweb.resources.icingadb.username: "{{ postgres_user }}"
+      icingaweb.resources.icingadb.password: "{{ postgres_password }}"
+    depends_on:
+      - icinga2
+      - icingadb
+      - postgres
+    networks:
+      - {{ stack_network }}
+
+volumes:
+  influxdb-data:
+  grafana-data:
+  postgres-data:
+  icinga2-data:
+
+networks:
+  {{ stack_network }}:
+    driver: bridge

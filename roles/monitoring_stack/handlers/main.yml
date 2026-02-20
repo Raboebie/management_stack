@@ -1,0 +1,5 @@
+---
+- name: Restart monitoring stack
+  ansible.builtin.shell:
+    cmd: docker compose down && docker compose up -d
+    chdir: "{{ stack_dir }}"

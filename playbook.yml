@@ -1,0 +1,7 @@
+---
+- name: Deploy monitoring stack
+  hosts: localhost
+  become: true
+  roles:
+    - prerequisites
+    - monitoring_stack
