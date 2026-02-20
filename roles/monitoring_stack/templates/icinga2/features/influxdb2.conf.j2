@@ -12,7 +12,7 @@ object Influxdb2Writer "influxdb2" {
   enable_send_thresholds = true
   enable_send_metadata = true
 
-  flush_interval = "10s"
+  flush_interval = 10s
   flush_threshold = 1024
 
   host_template = {

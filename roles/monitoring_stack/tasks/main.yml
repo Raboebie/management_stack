@@ -53,19 +53,33 @@
     mode: "0644"
   notify: Restart monitoring stack
 
+- name: Deploy rocm-smi wrapper script
+  ansible.builtin.template:
+    src: rocm-smi-telegraf.sh.j2
+    dest: "{{ stack_dir }}/telegraf/rocm-smi-telegraf.sh"
+    mode: "0755"
+  notify: Restart monitoring stack
+
 - name: Deploy Icinga2 constants.conf
   ansible.builtin.template:
     src: icinga2/constants.conf.j2
     dest: "{{ stack_dir }}/icinga2/conf.d/constants.conf"
     mode: "0644"
-  notify: Restart monitoring stack
+  register: icinga2_constants
 
 - name: Deploy Icinga2 InfluxDB2 writer feature
   ansible.builtin.template:
     src: icinga2/features/influxdb2.conf.j2
     dest: "{{ stack_dir }}/icinga2/features-enabled/influxdb2.conf"
     mode: "0644"
-  notify: Restart monitoring stack
+  register: icinga2_influxdb2
+
+- name: Deploy Icinga2 IcingaDB feature
+  ansible.builtin.template:
+    src: icinga2/features/icingadb.conf.j2
+    dest: "{{ stack_dir }}/icinga2/features-enabled/icingadb.conf"
+    mode: "0644"
+  register: icinga2_icingadb
 
 - name: Deploy Grafana datasource provisioning
   ansible.builtin.template:
@@ -96,3 +110,41 @@
     chdir: "{{ stack_dir }}"
   register: compose_up
   changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"
+
+# ── Icinga2 post-start config (docker cp into running container) ─────────────
+
+- name: Wait for Icinga2 container to initialize
+  ansible.builtin.command:
+    cmd: docker exec icinga2 test -f /data/etc/icinga2/icinga2.conf
+  register: icinga2_init
+  retries: 15
+  delay: 3
+  until: icinga2_init.rc == 0
+  changed_when: false
+
+- name: Copy Icinga2 constants.conf into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/conf.d/constants.conf
+      icinga2:/data/etc/icinga2/constants.conf
+  when: icinga2_constants.changed or compose_up.changed
+  notify: Restart icinga2
+
+- name: Copy Icinga2 influxdb2 feature into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/features-enabled/influxdb2.conf
+      icinga2:/data/etc/icinga2/features-enabled/influxdb2.conf
+  when: icinga2_influxdb2.changed or compose_up.changed
+  notify: Restart icinga2
+
+- name: Copy Icinga2 icingadb feature into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/features-enabled/icingadb.conf
+      icinga2:/data/etc/icinga2/features-enabled/icingadb.conf
+  when: icinga2_icingadb.changed or compose_up.changed
+  notify: Restart icinga2

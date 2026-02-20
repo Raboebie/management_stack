@@ -432,7 +432,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"temperature_edge\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"temperature_edge\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ]
@@ -472,7 +472,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"gpu_use_percent\")\n  |> last()",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"gpu_use_percent\")\n  |> last()",
           "refId": "A"
         }
       ]
@@ -502,7 +502,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"gpu_use_percent\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"gpu_use_percent\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ]
@@ -511,13 +511,15 @@
       "datasource": { "type": "influxdb", "uid": "" },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 12000000000 },
-              { "color": "red", "value": 15000000000 }
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
             ]
           }
         },
@@ -540,7 +542,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"vram_used\")\n  |> last()",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"vram_used_percent\")\n  |> last()",
           "refId": "A"
         }
       ]
@@ -549,7 +551,9 @@
       "datasource": { "type": "influxdb", "uid": "" },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
           "custom": {
             "fillOpacity": 10,
             "lineWidth": 1
@@ -568,7 +572,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and (r._field == \"vram_used\" or r._field == \"vram_total\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"vram_used_percent\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ]
@@ -598,7 +602,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"fan_speed\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"fan_speed_percent\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ]
@@ -626,7 +630,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "" },
-          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r._field == \"power_avg\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"amd_rocm_smi\" and r.gpu == \"card0\" and r._field == \"power_avg\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ]

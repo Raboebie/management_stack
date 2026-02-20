@@ -18,7 +18,7 @@
 # ── Outputs ──────────────────────────────────────────────────────────────────
 
 [[outputs.influxdb_v2]]
-  urls = ["http://influxdb:{{ influxdb_port }}"]
+  urls = ["http://127.0.0.1:{{ influxdb_port }}"]
   token = "{{ influxdb_admin_token }}"
   organization = "{{ influxdb_org }}"
   bucket = "{{ influxdb_bucket }}"
@@ -47,5 +47,11 @@
 
 [[inputs.processes]]
 
-[[inputs.amd_rocm_smi]]
-  bin_path = "{{ rocm_path }}/bin/rocm-smi"
+# AMD GPU metrics via rocm-smi (nsenter into host namespace since
+# rocm-smi is a Python script and the Telegraf container lacks python3)
+[[inputs.exec]]
+  commands = ["/usr/local/bin/rocm-smi-telegraf.sh"]
+  timeout = "10s"
+  data_format = "json"
+  name_override = "amd_rocm_smi"
+  tag_keys = ["gpu"]

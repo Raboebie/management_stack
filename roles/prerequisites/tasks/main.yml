@@ -1,25 +1,13 @@
 ---
-# ── Docker CE ────────────────────────────────────────────────────────────────
+# ── Docker (Fedora moby-engine packages) ─────────────────────────────────────
 
-- name: Install dnf-plugins-core
-  ansible.builtin.dnf:
-    name: dnf-plugins-core
-    state: present
-
-- name: Add Docker CE repository
-  ansible.builtin.command:
-    cmd: dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
-  args:
-    creates: /etc/yum.repos.d/docker-ce.repo
-
-- name: Install Docker CE and Compose plugin
+- name: Install Docker and Compose (Fedora packages)
   ansible.builtin.dnf:
     name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-buildx-plugin
-      - docker-compose-plugin
+      - moby-engine
+      - docker-cli
+      - docker-compose
+      - containerd
     state: present
 
 - name: Enable and start Docker service
@@ -36,32 +24,14 @@
 
 # ── ROCm / rocm-smi ─────────────────────────────────────────────────────────
 
-- name: Add AMDGPU repository
-  ansible.builtin.command:
-    cmd: >-
-      dnf config-manager addrepo
-      --from-repofile=https://repo.radeon.com/amdgpu/latest/rhel/9.4/amdgpu.repo
-  args:
-    creates: /etc/yum.repos.d/amdgpu.repo
-
-- name: Add ROCm repository
-  ansible.builtin.command:
-    cmd: >-
-      dnf config-manager addrepo
-      --from-repofile=https://repo.radeon.com/rocm/rhel9/rocm.repo
-  args:
-    creates: /etc/yum.repos.d/rocm.repo
-
-- name: Install rocm-smi-lib (provides rocm-smi)
+- name: Install rocm-smi
   ansible.builtin.dnf:
-    name: rocm-smi-lib
+    name: rocm-smi
     state: present
-    disable_gpg_check: true
-  ignore_errors: true
 
 - name: Check rocm-smi is available
   ansible.builtin.command:
-    cmd: "{{ rocm_path }}/bin/rocm-smi --showtemp"
+    cmd: "{{ rocm_smi_path }} --showtemp"
   register: rocm_check
   changed_when: false
   failed_when: false
@@ -69,7 +39,6 @@
 - name: Warn if rocm-smi is not available
   ansible.builtin.debug:
     msg: >-
-      rocm-smi not found at {{ rocm_path }}/bin/rocm-smi.
+      rocm-smi not found at {{ rocm_smi_path }}.
       GPU metrics will not be collected by Telegraf.
-      Install ROCm manually if needed.
   when: rocm_check.rc != 0

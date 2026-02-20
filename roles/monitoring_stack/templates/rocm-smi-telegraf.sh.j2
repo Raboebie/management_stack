@@ -1,0 +1,32 @@
+#!/bin/sh
+# Wrapper: runs entirely in host namespace via nsenter
+exec nsenter -t 1 -m -- /bin/sh -c '
+{{ rocm_smi_path }} --showtemp --showuse --showmemuse --showpower --showfan --json 2>/dev/null | \
+python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except:
+    sys.exit(1)
+for card, metrics in data.items():
+    out = {\"gpu\": card}
+    mapping = {
+        \"Temperature (Sensor edge) (C)\": \"temperature_edge\",
+        \"Temperature (Sensor junction) (C)\": \"temperature_junction\",
+        \"Temperature (Sensor memory) (C)\": \"temperature_memory\",
+        \"Fan speed (%)\": \"fan_speed_percent\",
+        \"Fan RPM\": \"fan_rpm\",
+        \"Average Graphics Package Power (W)\": \"power_avg\",
+        \"GPU use (%)\": \"gpu_use_percent\",
+        \"GPU Memory Allocated (VRAM%)\": \"vram_used_percent\",
+        \"GPU Memory Read/Write Activity (%)\": \"memory_activity_percent\",
+    }
+    for raw_key, clean_key in mapping.items():
+        val = metrics.get(raw_key)
+        if val is not None and val != \"N/A\":
+            try:
+                out[clean_key] = float(val)
+            except ValueError:
+                pass
+    print(json.dumps(out))
+"'

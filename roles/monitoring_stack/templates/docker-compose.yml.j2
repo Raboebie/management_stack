@@ -45,6 +45,9 @@ services:
     privileged: true
     pid: host
     network_mode: host
+    entrypoint: ["telegraf"]
+    security_opt:
+      - label:disable
     environment:
       HOST_PROC: /hostfs/proc
       HOST_SYS: /hostfs/sys
@@ -53,13 +56,13 @@ services:
       HOST_MOUNT_PREFIX: /hostfs
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./telegraf/rocm-smi-telegraf.sh:/usr/local/bin/rocm-smi-telegraf.sh:ro
       - /proc:/hostfs/proc:ro
       - /sys:/hostfs/sys:ro
       - /etc:/hostfs/etc:ro
       - /run:/hostfs/run:ro
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
-      - {{ rocm_path }}:{{ rocm_path }}:ro
 
   # ── PostgreSQL (IcingaWeb2 + IcingaDB backend) ──────────────────────────
   postgres:
@@ -95,8 +98,6 @@ services:
       ICINGA_CN: icinga2-master
     volumes:
       - icinga2-data:/data
-      - ./icinga2/features-enabled/influxdb2.conf:/etc/icinga2/features-enabled/influxdb2.conf:ro
-      - ./icinga2/conf.d/constants.conf:/etc/icinga2/conf.d/constants.conf:ro
     depends_on:
       - influxdb
       - icingadb-redis
@@ -110,6 +111,7 @@ services:
     restart: unless-stopped
     environment:
       ICINGADB_REDIS_HOST: icingadb-redis
+      ICINGADB_REDIS_PORT: "6379"
       ICINGADB_DATABASE_HOST: postgres
       ICINGADB_DATABASE_PORT: "5432"
       ICINGADB_DATABASE_DATABASE: "{{ postgres_db }}"
@@ -132,7 +134,7 @@ services:
       - "{{ icingaweb2_port }}:8080"
     environment:
       icingaweb.enabledModules: icingadb
-      icingaweb.passwords.icingaweb2.icingaadmin: "{{ icinga2_api_password }}"
+      icingaweb.passwords.icingaweb2.icingaadmin: "{{ icingaweb2_admin_password }}"
       icingaweb.authentication.icingaweb2.backend: db
       icingaweb.authentication.icingaweb2.resource: icingaweb_db
       icingaweb.config.logging.log: php

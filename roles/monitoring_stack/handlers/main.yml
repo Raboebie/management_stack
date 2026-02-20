@@ -3,3 +3,7 @@
   ansible.builtin.shell:
     cmd: docker compose down && docker compose up -d
     chdir: "{{ stack_dir }}"
+
+- name: Restart icinga2
+  ansible.builtin.command:
+    cmd: docker restart icinga2
