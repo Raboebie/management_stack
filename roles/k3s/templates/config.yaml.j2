@@ -1,0 +1,8 @@
+disable:
+  - traefik
+  - servicelb
+write-kubeconfig-mode: "0644"
+tls-san:
+  - k3s.{{ dns_domain }}
+  - {{ host_ip }}
+  - 127.0.0.1

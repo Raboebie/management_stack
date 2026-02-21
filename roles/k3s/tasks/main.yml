@@ -1,0 +1,125 @@
+---
+# ── SELinux policy for k3s ───────────────────────────────────────────────────
+
+- name: Add Rancher k3s RPM repository
+  ansible.builtin.yum_repository:
+    name: rancher-k3s-common
+    description: Rancher k3s Common
+    baseurl: https://rpm.rancher.io/k3s/stable/common/centos/9/noarch
+    gpgcheck: true
+    gpgkey: https://rpm.rancher.io/public.key
+    enabled: true
+
+- name: Install k3s-selinux
+  ansible.builtin.dnf:
+    name: k3s-selinux
+    state: present
+
+# ── Helm ─────────────────────────────────────────────────────────────────────
+
+- name: Install Helm
+  ansible.builtin.dnf:
+    name: helm
+    state: present
+
+# ── Firewalld ────────────────────────────────────────────────────────────────
+
+- name: Open k3s API port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ k3s_api_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Allow pod and service networks in firewalld
+  ansible.posix.firewalld:
+    source: "{{ item }}"
+    zone: trusted
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 10.42.0.0/16
+    - 10.43.0.0/16
+
+# ── k3s config ───────────────────────────────────────────────────────────────
+
+- name: Create k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Deploy k3s config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+  notify: Restart k3s
+
+# ── Install k3s ──────────────────────────────────────────────────────────────
+
+- name: Install k3s
+  ansible.builtin.shell:
+    cmd: curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s -
+    creates: /usr/local/bin/k3s
+
+- name: Enable and start k3s
+  ansible.builtin.systemd:
+    name: k3s
+    enabled: true
+    state: started
+
+# ── Wait for readiness ───────────────────────────────────────────────────────
+
+- name: Wait for k3s node to be ready
+  ansible.builtin.command:
+    cmd: k3s kubectl get nodes -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
+  register: k3s_ready
+  retries: 30
+  delay: 5
+  until: k3s_ready.stdout == "True"
+  changed_when: false
+
+# ── Kubeconfig for user ──────────────────────────────────────────────────────
+
+- name: Create .kube directory for user
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user_id }}/.kube"
+    state: directory
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0755"
+
+- name: Copy kubeconfig for user
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ ansible_user_id }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0600"
+
+- name: Fix kubeconfig server address
+  ansible.builtin.replace:
+    path: "/home/{{ ansible_user_id }}/.kube/config"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://{{ host_ip }}:{{ k3s_api_port }}"
+
+# ── Shell completion ─────────────────────────────────────────────────────────
+
+- name: Ensure zsh site-functions directory exists
+  ansible.builtin.file:
+    path: /usr/local/share/zsh/site-functions
+    state: directory
+    mode: "0755"
+
+- name: Generate kubectl zsh completion
+  ansible.builtin.shell:
+    cmd: k3s kubectl completion zsh > /usr/local/share/zsh/site-functions/_kubectl
+    creates: /usr/local/share/zsh/site-functions/_kubectl
+
+- name: Generate helm zsh completion
+  ansible.builtin.shell:
+    cmd: helm completion zsh > /usr/local/share/zsh/site-functions/_helm
+    creates: /usr/local/share/zsh/site-functions/_helm

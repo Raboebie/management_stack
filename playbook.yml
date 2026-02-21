@@ -5,6 +5,7 @@
   roles:
     - prerequisites
     - monitoring_stack
+    - k3s
 
 - name: Register monitoring DNS in Pi-hole
   hosts: localhost

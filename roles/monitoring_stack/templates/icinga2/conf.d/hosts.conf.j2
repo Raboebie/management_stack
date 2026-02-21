@@ -47,4 +47,11 @@ object Host NodeName {
     http_uri = "/"
     http_port = {{ tabby_port }}
   }
+  vars.http_vhosts["k3s API"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/readyz"
+    http_port = {{ k3s_api_port }}
+    http_ssl = true
+    http_expect = "HTTP/1.1 401"
+  }
 }

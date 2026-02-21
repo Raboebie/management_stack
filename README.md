@@ -1,6 +1,6 @@
 # Monitoring Stack
 
-Ansible-deployed Docker Compose stack for full host monitoring on Fedora 43 with AMD GPU support. Includes Traefik reverse proxy with local TLS, centralized logging via Loki, Docker management via Portainer, Ansible web UI via Semaphore, and local LLM serving via Ollama with Open WebUI chat and Tabby code completion.
+Ansible-deployed Docker Compose stack for full host monitoring on Fedora 43 with AMD GPU support. Includes Traefik reverse proxy with local TLS, centralized logging via Loki, Docker management via Portainer, Ansible web UI via Semaphore, local LLM serving via Ollama with Open WebUI chat and Tabby code completion, and a single-node k3s Kubernetes cluster for container orchestration.
 
 ## Architecture
 
@@ -38,6 +38,11 @@ Host (Fedora 43)
 +-- Ollama (LLM serving, ROCm GPU, qwen2.5-coder:14b)
 +-- Open WebUI (LLM chat interface)
 +-- Tabby (code completion, proxies through Ollama)
+|
++-- k3s (single-node Kubernetes, systemd service)
+    Built-in Traefik/ServiceLB disabled (external Traefik handles HTTPS)
+    Bundled containerd (coexists with Docker)
+    Helm for package management
 ```
 
 ## Services
@@ -60,6 +65,7 @@ Host (Fedora 43)
 | Open WebUI | 8082 | `https://chat.home` | LLM chat interface |
 | Tabby | 8083 | `https://tabby.home` | Code completion server |
 | Telegraf | host network | — | System + GPU + Ollama metric collection |
+| k3s API | 6443 | `https://k3s.home:6443` | Kubernetes API server (systemd service) |
 
 ## Prerequisites
 
@@ -86,6 +92,7 @@ The playbook registers `.home` DNS records in Pi-hole v6 so services are reachab
 | `chat.home` | Open WebUI | `https://chat.home` |
 | `tabby.home` | Tabby | `https://tabby.home` |
 | `pihole.home` | Pi-hole | `http://pihole.home:8181` |
+| `k3s.home` | k3s API | `https://k3s.home:6443` |
 
 All records point to the host IP (`192.168.88.100`). TLS is provided by a mkcert certificate with explicit SANs for each hostname (wildcard-only certs don't work for single-label TLDs like `.home`). The mkcert CA is trusted in the OS trust store, system trust anchors, and the invoking user's browser (Firefox/Chrome). HTTP requests are automatically redirected to HTTPS.
 
@@ -114,6 +121,7 @@ ansible-playbook playbook.yml
 #    Open WebUI: https://chat.home
 #    Ollama API: https://ollama.home
 #    Tabby:      https://tabby.home
+#    k3s API:    https://k3s.home:6443
 ```
 
 ## Credentials
@@ -163,6 +171,11 @@ monitoring-stack/
     |   +-- tasks/main.yml         # Docker, rocm-smi, mkcert installation
     +-- pihole_dns/
     |   +-- tasks/main.yml         # Register .home DNS records in Pi-hole v6
+    +-- k3s/
+    |   +-- tasks/main.yml         # Install k3s, Helm, firewalld, kubeconfig
+    |   +-- handlers/main.yml      # Restart k3s handler
+    |   +-- templates/
+    |       +-- config.yaml.j2     # k3s server config (disable traefik/servicelb)
     +-- monitoring_stack/
         +-- tasks/main.yml         # Deploy configs, start stack, configure Icinga2
         +-- handlers/main.yml      # Restart handlers
@@ -242,6 +255,8 @@ Edit via `ansible-vault edit group_vars/all.yml`:
 | `tabby_port` | 8083 | Tabby port |
 | `tabby_completion_model` | qwen2.5-coder:14b | Tabby completion model (via Ollama) |
 | `tabby_chat_model` | qwen2.5-coder:14b | Tabby chat model (via Ollama) |
+| `k3s_version` | v1.32.1+k3s1 | k3s release version |
+| `k3s_api_port` | 6443 | k3s API server port |
 
 ## Grafana Dashboard
 
@@ -389,4 +404,10 @@ docker compose -f ~/monitoring-stack/stack/docker-compose.yml down
 
 # Tear down + delete data
 docker compose -f ~/monitoring-stack/stack/docker-compose.yml down -v
+
+# k3s cluster
+kubectl get nodes
+kubectl get pods -A
+kubectl cluster-info
+helm version
 ```
