@@ -73,7 +73,7 @@ Host (Fedora 43)
 - Ansible (`dnf install ansible`)
 - Passwordless sudo (or use `--ask-become-pass`)
 
-Docker (moby-engine), docker-compose, rocm-smi, and mkcert are installed automatically by the playbook.
+Docker (moby-engine), docker-compose, rocm-smi, mkcert, k3s, and Helm are installed automatically by the playbook.
 
 ## DNS
 
@@ -324,6 +324,37 @@ aider --model ollama/qwen2.5-coder:14b
 ### Ollama Metrics
 
 Telegraf collects Ollama metrics (loaded models, VRAM usage, available model count) via an exec script polling `/api/ps` and `/api/tags`. Data flows to InfluxDB for Grafana dashboards.
+
+## Kubernetes (k3s)
+
+A single-node k3s cluster runs alongside the Docker Compose stack as a systemd service. k3s uses its own bundled containerd runtime, so there is no conflict with Docker.
+
+**Key details:**
+- Built-in Traefik and ServiceLB are disabled (the external Traefik handles HTTPS)
+- Helm is installed for package management
+- Firewalld rules open port 6443 and trust pod/service CIDRs (10.42.0.0/16, 10.43.0.0/16)
+- k3s-selinux is installed from the Rancher RPM repo for Fedora/SELinux compatibility
+- Kubeconfig is copied to `~/.kube/config` with the host IP as the server address
+- kubectl and Helm zsh completions are installed
+
+```bash
+# Cluster status
+kubectl get nodes
+kubectl get pods -A
+
+# Deploy a workload
+kubectl create deployment hello --image=nginx --port=80
+kubectl expose deployment hello --type=NodePort --port=80
+kubectl get svc hello
+
+# Helm
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm search repo bitnami
+
+# k3s service management
+sudo systemctl status k3s
+sudo journalctl -u k3s -f
+```
 
 ## GNOME Shell Extension — Docker Monitor
 
