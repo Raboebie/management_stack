@@ -1,0 +1,9 @@
+{
+    "uuid": "docker-monitor@dihan",
+    "name": "Docker Container Monitor",
+    "description": "Top bar indicator showing Docker container status with configurable container list",
+    "shell-version": ["49"],
+    "version": 1,
+    "settings-schema": "org.gnome.shell.extensions.docker-monitor",
+    "url": ""
+}

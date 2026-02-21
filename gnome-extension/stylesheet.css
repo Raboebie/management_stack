@@ -1,0 +1,19 @@
+.container-running {
+    color: #2ec27e;
+}
+
+.container-stopped {
+    color: #e01b24;
+}
+
+.status-ok {
+    color: #2ec27e;
+}
+
+.status-error {
+    color: #e01b24;
+}
+
+.docker-monitor-header {
+    font-weight: bold;
+}

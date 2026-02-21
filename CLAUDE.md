@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Ansible-deployed Docker Compose monitoring stack for Fedora 43 with AMD GPU support. Thirteen containers: Traefik, Telegraf, InfluxDB 2.x, Grafana, Loki, Promtail, Icinga2, IcingaDB, IcingaWeb2, PostgreSQL, Redis, Portainer, Semaphore.
+Ansible-deployed Docker Compose monitoring stack for Fedora 43 with AMD GPU support. Thirteen containers: Traefik, Telegraf, InfluxDB 2.x, Grafana, Loki, Promtail, Icinga2, IcingaDB, IcingaWeb2, PostgreSQL, Redis, Portainer, Semaphore. Includes a GNOME Shell extension (`gnome-extension/`) for top bar container status monitoring.
 
 ## Commands
 
@@ -65,6 +65,10 @@ The vault password file is `.vault` (mode 600, gitignored). Ansible auto-reads i
 - **Handlers for restarts**: Template changes trigger handlers in `roles/monitoring_stack/handlers/main.yml` to restart affected containers.
 - **Pi-hole DNS via REST API**: The `pihole_dns` role uses Pi-hole v6's REST API (`/api/config/dns/hosts/{entry}`) to manage local DNS records. It authenticates with a session SID, diffs current vs desired records, and issues individual PUT/DELETE calls per entry. The role owns all Pi-hole local DNS records — manual UI changes will be overwritten on next run.
 
+## GNOME Shell Extension
+
+The `gnome-extension/` directory contains a GNOME Shell 49 extension (`docker-monitor@dihan`) that adds a top bar indicator for Docker container status. It uses ESModules (`import`/`export`), `Gio.Subprocess` for async `docker ps` polling, `PanelMenu.Button` for the panel indicator, and `Adw` widgets for the preferences window. The GSettings schema stores the monitored container list and refresh interval. Install location: `~/.local/share/gnome-shell/extensions/docker-monitor@dihan/`.
+
 ## When Modifying
 
 - To add a new service: add to `templates/docker-compose.yml.j2` (with Traefik labels for HTTPS routing), add any needed variables to `group_vars/all.yml` (re-encrypt), add config templates, update the task list in `roles/monitoring_stack/tasks/main.yml`, add a DNS record to `pihole_dns_records`, and add to `bookmarks.html`. Note: adding a DNS record also adds it as a SAN to the TLS cert (delete the existing cert to regenerate).
@@ -72,3 +76,4 @@ The vault password file is `.vault` (mode 600, gitignored). Ansible auto-reads i
 - To change a check or add an Icinga2 monitor: edit the templates in `templates/icinga2/conf.d/` (hosts.conf.j2, services.conf.j2, api-users.conf.j2) or `templates/icinga2/features/`. These are deployed via `docker cp` tasks — follow the existing pattern.
 - To add a DNS record: add an entry to `pihole_dns_records` in `group_vars/all.yml`. Each entry has a `hostname` key; the role appends `.{dns_domain}` and maps it to `host_ip`.
 - The pre-built Grafana dashboard is at `roles/monitoring_stack/files/grafana/dashboards/system-monitoring.json` (649 lines). It uses Flux queries against InfluxDB. Loki logs are available via the Explore view in Grafana.
+- To modify the GNOME Shell extension: edit files in `gnome-extension/`, then copy to `~/.local/share/gnome-shell/extensions/docker-monitor@dihan/` and run `glib-compile-schemas schemas/`. If adding a new service with a web URL, add it to the `CONTAINER_URLS` map in `extension.js` and to the default `monitored-containers` list in the GSettings schema.

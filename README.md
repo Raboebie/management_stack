@@ -137,6 +137,13 @@ monitoring-stack/
 +-- group_vars/all.yml             # Encrypted variables (vault)
 +-- bookmarks.html                 # Firefox bookmarks for all service URLs
 +-- .vault                         # Vault password (gitignored)
++-- gnome-extension/               # GNOME Shell Docker Monitor extension
+|   +-- metadata.json              # Extension metadata (GNOME Shell 49)
+|   +-- extension.js               # Panel indicator + Docker polling
+|   +-- prefs.js                   # Preferences window (add/remove containers)
+|   +-- stylesheet.css             # Status color classes
+|   +-- schemas/
+|       +-- org.gnome.shell.extensions.docker-monitor.gschema.xml
 +-- roles/
     +-- prerequisites/
     |   +-- tasks/main.yml         # Docker, rocm-smi, mkcert installation
@@ -233,6 +240,63 @@ Collected fields: `temperature_edge`, `temperature_junction`, `temperature_memor
 Note: Fan speed fields (`fan_speed_percent`, `fan_rpm`) are parsed but may be absent on hardware that doesn't expose fan data.
 
 Requirements: Telegraf container runs as root with `security_opt: label:disable` (SELinux) and host PID namespace.
+
+## GNOME Shell Extension — Docker Monitor
+
+A GNOME Shell top bar indicator that shows container health at a glance. Source code is in `gnome-extension/`.
+
+**Features:**
+- Panel icon: green checkmark when all monitored containers are running, red X when any are down
+- Dropdown menu listing each container with its status (running/stopped)
+- Click a container name to open its `.home` URL in the browser
+- Configurable container list and refresh interval via preferences window
+- "Import from Docker" button auto-discovers all running containers
+- Polls `docker ps` every 10 seconds (configurable 5–300s)
+
+**Install:**
+
+```bash
+# Copy to GNOME Shell extensions directory
+cp -r gnome-extension ~/.local/share/gnome-shell/extensions/docker-monitor@dihan
+
+# Compile GSettings schema
+glib-compile-schemas ~/.local/share/gnome-shell/extensions/docker-monitor@dihan/schemas/
+
+# Log out and back in (Wayland requires restart to discover new extensions), then:
+gnome-extensions enable docker-monitor@dihan
+```
+
+**Or install from the pre-built zip:**
+
+```bash
+gnome-extensions install gnome-extension/docker-monitor@dihan.shell-extension.zip --force
+# Log out and back in, then:
+gnome-extensions enable docker-monitor@dihan
+```
+
+**Preferences:** `gnome-extensions prefs docker-monitor@dihan`
+
+**Troubleshooting:**
+
+```bash
+# Check extension status
+gnome-extensions info docker-monitor@dihan
+
+# Watch for errors
+journalctl -f /usr/bin/gnome-shell | grep -i docker
+```
+
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| `extension.js` | Panel indicator, Docker polling via `Gio.Subprocess`, status menu |
+| `prefs.js` | Adw preferences window (add/remove containers, refresh interval) |
+| `stylesheet.css` | Green/red status color classes |
+| `metadata.json` | GNOME Shell 49 extension metadata |
+| `schemas/*.gschema.xml` | GSettings schema (`monitored-containers`, `refresh-interval`) |
+
+Requires GNOME Shell 49.
 
 ## Operations
 

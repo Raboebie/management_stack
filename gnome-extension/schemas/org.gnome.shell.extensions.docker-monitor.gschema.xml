@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.docker-monitor"
+          path="/org/gnome/shell/extensions/docker-monitor/">
+
+    <key name="monitored-containers" type="as">
+      <default>['traefik', 'telegraf', 'influxdb', 'grafana', 'loki', 'promtail', 'icinga2', 'icingadb', 'icingaweb2', 'postgres', 'redis', 'portainer', 'semaphore']</default>
+      <summary>Monitored container names</summary>
+      <description>List of Docker container names to monitor in the panel indicator</description>
+    </key>
+
+    <key name="refresh-interval" type="i">
+      <default>10</default>
+      <summary>Refresh interval</summary>
+      <description>How often to poll Docker for container status, in seconds</description>
+      <range min="5" max="300"/>
+    </key>
+
+  </schema>
+</schemalist>
