@@ -52,6 +52,6 @@ object Host NodeName {
     http_uri = "/readyz"
     http_port = {{ k3s_api_port }}
     http_ssl = true
-    http_expect = "HTTP/1.1 401"
+    http_expect = "401 Unauthorized"
   }
 }
