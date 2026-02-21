@@ -55,3 +55,11 @@
   data_format = "json"
   name_override = "amd_rocm_smi"
   tag_keys = ["gpu"]
+
+# Ollama LLM metrics (loaded models, VRAM usage, available models)
+[[inputs.exec]]
+  commands = ["/usr/local/bin/ollama-metrics.sh"]
+  timeout = "15s"
+  data_format = "json"
+  name_override = "ollama"
+  tag_keys = ["loaded_model_names"]

@@ -16,6 +16,9 @@ const CONTAINER_URLS = {
     'portainer': 'https://portainer.home',
     'semaphore': 'https://semaphore.home',
     'loki': 'https://loki.home',
+    'ollama': 'https://ollama.home',
+    'open-webui': 'https://chat.home',
+    'tabby': 'https://tabby.home',
 };
 
 class DockerMonitorIndicator extends PanelMenu.Button {

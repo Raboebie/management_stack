@@ -1,6 +1,6 @@
 # Monitoring Stack
 
-Ansible-deployed Docker Compose stack for full host monitoring on Fedora 43 with AMD GPU support. Includes Traefik reverse proxy with local TLS, centralized logging via Loki, Docker management via Portainer, and Ansible web UI via Semaphore.
+Ansible-deployed Docker Compose stack for full host monitoring on Fedora 43 with AMD GPU support. Includes Traefik reverse proxy with local TLS, centralized logging via Loki, Docker management via Portainer, Ansible web UI via Semaphore, and local LLM serving via Ollama with Open WebUI chat and Tabby code completion.
 
 ## Architecture
 
@@ -8,12 +8,13 @@ Ansible-deployed Docker Compose stack for full host monitoring on Fedora 43 with
 Host (Fedora 43)
 +-- Traefik (reverse proxy, HTTPS via mkcert *.home wildcard cert)
 |   Routes: grafana.home, icinga.home, influxdb.home, portainer.home,
-|           semaphore.home, traefik.home
+|           semaphore.home, traefik.home, ollama.home, chat.home, tabby.home
 |   HTTP -> HTTPS redirect
 |
 +-- Telegraf (privileged, host PID/network)
 |   CPU, Memory, Disk, DiskIO, Network, System, Processes
 |   AMD GPU via rocm-smi (nsenter into host namespace)
+|   Ollama metrics (loaded models, VRAM usage)
 |   writes to --> InfluxDB 2.x
 |
 +-- Promtail (log collector)
@@ -34,6 +35,9 @@ Host (Fedora 43)
 +-- Grafana (dashboards + log exploration via Loki)
 +-- Portainer (Docker management UI)
 +-- Semaphore (Ansible web UI)
++-- Ollama (LLM serving, ROCm GPU, qwen2.5-coder:14b)
++-- Open WebUI (LLM chat interface)
++-- Tabby (code completion, proxies through Ollama)
 ```
 
 ## Services
@@ -52,7 +56,10 @@ Host (Fedora 43)
 | PostgreSQL | internal | — | Database for IcingaWeb2 + IcingaDB |
 | Redis | internal | — | IcingaDB state backend |
 | IcingaDB | internal | — | Syncs Icinga2 state to PostgreSQL via Redis |
-| Telegraf | host network | — | System + GPU metric collection |
+| Ollama | 11434 | `https://ollama.home` | LLM serving with AMD GPU (ROCm) |
+| Open WebUI | 8082 | `https://chat.home` | LLM chat interface |
+| Tabby | 8083 | `https://tabby.home` | Code completion server |
+| Telegraf | host network | — | System + GPU + Ollama metric collection |
 
 ## Prerequisites
 
@@ -75,6 +82,9 @@ The playbook registers `.home` DNS records in Pi-hole v6 so services are reachab
 | `portainer.home` | Portainer | `https://portainer.home` |
 | `semaphore.home` | Semaphore | `https://semaphore.home` |
 | `icinga-api.home` | Icinga2 API | `https://icinga-api.home:5665` |
+| `ollama.home` | Ollama | `https://ollama.home` |
+| `chat.home` | Open WebUI | `https://chat.home` |
+| `tabby.home` | Tabby | `https://tabby.home` |
 | `pihole.home` | Pi-hole | `http://pihole.home:8181` |
 
 All records point to the host IP (`192.168.88.100`). TLS is provided by a mkcert certificate with explicit SANs for each hostname (wildcard-only certs don't work for single-label TLDs like `.home`). The mkcert CA is trusted in the OS trust store, system trust anchors, and the invoking user's browser (Firefox/Chrome). HTTP requests are automatically redirected to HTTPS.
@@ -101,6 +111,9 @@ ansible-playbook playbook.yml
 #    Portainer:  https://portainer.home
 #    Semaphore:  https://semaphore.home
 #    Traefik:    https://traefik.home
+#    Open WebUI: https://chat.home
+#    Ollama API: https://ollama.home
+#    Tabby:      https://tabby.home
 ```
 
 ## Credentials
@@ -126,6 +139,7 @@ The vault password is in `.vault` (gitignored, mode 600). Ansible is configured 
 | InfluxDB | admin | see vault: `influxdb_admin_password` |
 | Semaphore | admin | see vault: `semaphore_admin_password` |
 | Portainer | (set on first login) | — |
+| Open WebUI | (set on first login) | — |
 
 ## Project Structure
 
@@ -156,6 +170,7 @@ monitoring-stack/
         |   +-- docker-compose.yml.j2
         |   +-- telegraf.conf.j2
         |   +-- rocm-smi-telegraf.sh.j2
+        |   +-- ollama-metrics.sh.j2
         |   +-- icinga2/
         |   |   +-- constants.conf.j2
         |   |   +-- conf.d/
@@ -173,6 +188,8 @@ monitoring-stack/
         |   |   +-- local-config.yaml.j2
         |   +-- promtail/
         |   |   +-- config.yaml.j2
+        |   +-- tabby/
+        |   |   +-- config.toml.j2
         |   +-- traefik/
         |       +-- tls.yml.j2
         +-- files/
@@ -215,6 +232,16 @@ Edit via `ansible-vault edit group_vars/all.yml`:
 | `influxdb_port` | 8086 | InfluxDB port |
 | `icingaweb2_port` | 8081 | IcingaWeb2 port |
 | `icinga2_api_port` | 5665 | Icinga2 API port |
+| `ollama_port` | 11434 | Ollama API port |
+| `ollama_keep_alive` | 24h | How long to keep models loaded in VRAM |
+| `ollama_num_parallel` | 4 | Max parallel requests per model |
+| `hsa_override_gfx_version` | 10.3.0 | ROCm GFX version override for AMD GPU |
+| `ollama_default_models` | [qwen2.5-coder:14b] | Models to pre-pull on deploy |
+| `open_webui_port` | 8082 | Open WebUI port |
+| `open_webui_secret_key` | (generated) | Open WebUI session secret |
+| `tabby_port` | 8083 | Tabby port |
+| `tabby_completion_model` | qwen2.5-coder:14b | Tabby completion model (via Ollama) |
+| `tabby_chat_model` | qwen2.5-coder:14b | Tabby chat model (via Ollama) |
 
 ## Grafana Dashboard
 
@@ -240,6 +267,48 @@ Collected fields: `temperature_edge`, `temperature_junction`, `temperature_memor
 Note: Fan speed fields (`fan_speed_percent`, `fan_rpm`) are parsed but may be absent on hardware that doesn't expose fan data.
 
 Requirements: Telegraf container runs as root with `security_opt: label:disable` (SELinux) and host PID namespace.
+
+## Local LLM Serving
+
+The stack includes local LLM inference via Ollama with AMD ROCm GPU acceleration (RX 6800 XT, 16GB VRAM).
+
+### Components
+
+- **Ollama** (`ollama.home`) — LLM serving with ROCm GPU. Pre-pulls `qwen2.5-coder:14b` (~10GB Q4). Exposes OpenAI-compatible API at `http://localhost:11434/v1`.
+- **Open WebUI** (`chat.home`) — Web chat interface. First visit requires creating an admin account.
+- **Tabby** (`tabby.home`) — Code completion server. Proxies through Ollama's API (no separate GPU access).
+
+### Editor Setup (Continue.dev + Tabby)
+
+For VS Code, use Continue.dev for chat/edit and Tabby for autocomplete:
+
+```yaml
+# ~/.continue/config.yaml
+models:
+  - title: "Qwen2.5 Coder 14B (Local)"
+    provider: ollama
+    model: qwen2.5-coder:14b
+    apiBase: http://localhost:11434
+tabAutocompleteModel:
+  title: "Tabby"
+  provider: openai
+  model: qwen2.5-coder:14b
+  apiBase: https://tabby.home/v1
+```
+
+### CLI Agent Usage
+
+Ollama's OpenAI-compatible endpoint works with aider, open-interpreter, goose, fabric, etc.:
+
+```bash
+export OPENAI_API_BASE=http://localhost:11434/v1
+export OPENAI_API_KEY=ollama
+aider --model ollama/qwen2.5-coder:14b
+```
+
+### Ollama Metrics
+
+Telegraf collects Ollama metrics (loaded models, VRAM usage, available model count) via an exec script polling `/api/ps` and `/api/tags`. Data flows to InfluxDB for Grafana dashboards.
 
 ## GNOME Shell Extension — Docker Monitor
 

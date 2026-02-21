@@ -42,6 +42,12 @@
     state: directory
     mode: "0755"
 
+- name: Create Tabby config directory
+  ansible.builtin.file:
+    path: "{{ stack_dir }}/tabby"
+    state: directory
+    mode: "0755"
+
 - name: Create certs directory
   ansible.builtin.file:
     path: "{{ stack_dir }}/certs"
@@ -148,6 +154,20 @@
     mode: "0644"
   notify: Restart monitoring stack
 
+- name: Deploy Tabby config
+  ansible.builtin.template:
+    src: tabby/config.toml.j2
+    dest: "{{ stack_dir }}/tabby/config.toml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Deploy Ollama metrics script
+  ansible.builtin.template:
+    src: ollama-metrics.sh.j2
+    dest: "{{ stack_dir }}/telegraf/ollama-metrics.sh"
+    mode: "0755"
+  notify: Restart monitoring stack
+
 # ── TLS certificate generation ───────────────────────────────────────────────
 
 - name: Generate TLS certificate with mkcert
@@ -170,6 +190,27 @@
     chdir: "{{ stack_dir }}"
   register: compose_up
   changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"
+
+# ── Ollama post-start: wait for readiness and pull models ─────────────────────
+
+- name: Wait for Ollama API to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ollama_port }}/api/tags"
+    method: GET
+    status_code: 200
+  register: ollama_health
+  retries: 20
+  delay: 5
+  until: ollama_health.status == 200
+
+- name: Pull Ollama models
+  ansible.builtin.command:
+    cmd: "docker exec ollama ollama pull {{ item }}"
+  loop: "{{ ollama_default_models }}"
+  async: 1800
+  poll: 30
+  register: pull_result
+  changed_when: true
 
 # ── Icinga2 post-start config (docker cp into running container) ─────────────
 

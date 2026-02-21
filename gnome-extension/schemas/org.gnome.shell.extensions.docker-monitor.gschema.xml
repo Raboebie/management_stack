@@ -4,7 +4,7 @@
           path="/org/gnome/shell/extensions/docker-monitor/">
 
     <key name="monitored-containers" type="as">
-      <default>['traefik', 'telegraf', 'influxdb', 'grafana', 'loki', 'promtail', 'icinga2', 'icingadb', 'icingaweb2', 'postgres', 'redis', 'portainer', 'semaphore']</default>
+      <default>['traefik', 'telegraf', 'influxdb', 'grafana', 'loki', 'promtail', 'icinga2', 'icingadb', 'icingaweb2', 'postgres', 'redis', 'portainer', 'semaphore', 'ollama', 'open-webui', 'tabby']</default>
       <summary>Monitored container names</summary>
       <description>List of Docker container names to monitor in the panel indicator</description>
     </key>

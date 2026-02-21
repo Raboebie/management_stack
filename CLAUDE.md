@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Ansible-deployed Docker Compose monitoring stack for Fedora 43 with AMD GPU support. Thirteen containers: Traefik, Telegraf, InfluxDB 2.x, Grafana, Loki, Promtail, Icinga2, IcingaDB, IcingaWeb2, PostgreSQL, Redis, Portainer, Semaphore. Includes a GNOME Shell extension (`gnome-extension/`) for top bar container status monitoring.
+Ansible-deployed Docker Compose monitoring stack for Fedora 43 with AMD GPU support. Sixteen containers: Traefik, Telegraf, InfluxDB 2.x, Grafana, Loki, Promtail, Icinga2, IcingaDB, IcingaWeb2, PostgreSQL, Redis, Portainer, Semaphore, Ollama, Open WebUI, Tabby. Includes local LLM serving (Ollama with ROCm GPU acceleration), a chat UI (Open WebUI), and code completion (Tabby). Includes a GNOME Shell extension (`gnome-extension/`) for top bar container status monitoring.
 
 ## Commands
 
@@ -33,13 +33,14 @@ The vault password file is `.vault` (mode 600, gitignored). Ansible auto-reads i
 ## Architecture
 
 **Data flow:**
-- Telegraf (host metrics + AMD GPU via rocm-smi) → InfluxDB 2.x
+- Telegraf (host metrics + AMD GPU via rocm-smi + Ollama metrics) → InfluxDB 2.x
 - Promtail (Docker + journal logs) → Loki
 - Icinga2 (service checks) → InfluxDB 2.x (via InfluxDB2Writer) + Redis → IcingaDB → PostgreSQL
 - Grafana reads from InfluxDB + Loki; IcingaWeb2 reads from PostgreSQL
 - Traefik reverse-proxies all web UIs with HTTPS (mkcert `*.home` wildcard cert)
+- Ollama (LLM serving with ROCm GPU) ← Open WebUI (chat UI) + Tabby (code completion) + CLI agents
 
-**Exposed ports:** Traefik HTTP (80), HTTPS (443), Grafana (3000), InfluxDB (8086), IcingaWeb2 (8081), Icinga2 API (5665), Portainer (9000), Semaphore (3001), Pi-hole (8181)
+**Exposed ports:** Traefik HTTP (80), HTTPS (443), Grafana (3000), InfluxDB (8086), IcingaWeb2 (8081), Icinga2 API (5665), Portainer (9000), Semaphore (3001), Ollama (11434), Open WebUI (8082), Tabby (8083), Pi-hole (8181)
 
 ## Playbook Structure
 
@@ -60,7 +61,10 @@ The vault password file is `.vault` (mode 600, gitignored). Ansible auto-reads i
 - **Loki + Promtail for logs**: Promtail collects Docker container logs (via Docker socket) and host systemd journal logs, pushes to Loki. Grafana has a provisioned Loki datasource. Loki retains 30 days of logs.
 - **GPU metrics use nsenter**: Telegraf container can't run rocm-smi directly (no python3 inside), so `rocm-smi-telegraf.sh.j2` uses `nsenter` into the host mount namespace. Requires privileged container with host PID and `security_opt: label:disable` for SELinux.
 - **Icinga2 post-deploy config**: Icinga2 configs (constants.conf, hosts.conf, services.conf, api-users.conf, influxdb2.conf, icingadb.conf) are copied into the running container with `docker cp` and then the container is restarted, because the Icinga2 image doesn't support bind-mounting these paths cleanly.
-- **Icinga2 checks target Docker host**: The host address uses the Docker bridge gateway IPv4 (`172.17.0.1` by default, overridable via `icinga2_host_address`). The icinga2 container has `extra_hosts: host.docker.internal:host-gateway`. Custom `hosts.conf` defines HTTP checks for Grafana, IcingaWeb2, InfluxDB, Portainer, and Semaphore. Custom `services.conf` removes the default SSH and disk checks (not meaningful inside a container).
+- **Icinga2 checks target Docker host**: The host address uses the Docker bridge gateway IPv4 (`172.17.0.1` by default, overridable via `icinga2_host_address`). The icinga2 container has `extra_hosts: host.docker.internal:host-gateway`. Custom `hosts.conf` defines HTTP checks for Grafana, IcingaWeb2, InfluxDB, Portainer, Semaphore, Ollama, Open WebUI, and Tabby. Custom `services.conf` removes the default SSH and disk checks (not meaningful inside a container).
+- **Ollama with ROCm GPU**: Ollama uses the `ollama/ollama:rocm` image with `/dev/kfd` + `/dev/dri` device passthrough. `HSA_OVERRIDE_GFX_VERSION=10.3.0` is required for gfx1030 (RX 6800 XT). Models are pre-pulled after compose up (async with 30-minute timeout). Ollama metrics (loaded models, VRAM usage) are collected via a Telegraf exec script.
+- **Tabby proxies through Ollama**: Tabby doesn't access the GPU directly — it routes completions and chat through Ollama's OpenAI-compatible API (`http://ollama:11434/v1`). Config is templated at `templates/tabby/config.toml.j2`.
+- **Open WebUI for chat**: Open WebUI connects to Ollama via the Docker network (`OLLAMA_BASE_URL=http://ollama:11434`). First visit requires creating an admin account.
 - **All credentials live in vault-encrypted `group_vars/all.yml`**: Passwords are pre-generated, not prompted. Variable names follow the pattern `{service}_{purpose}` (e.g., `influxdb_admin_token`, `icinga2_api_password`).
 - **Handlers for restarts**: Template changes trigger handlers in `roles/monitoring_stack/handlers/main.yml` to restart affected containers.
 - **Pi-hole DNS via REST API**: The `pihole_dns` role uses Pi-hole v6's REST API (`/api/config/dns/hosts/{entry}`) to manage local DNS records. It authenticates with a session SID, diffs current vs desired records, and issues individual PUT/DELETE calls per entry. The role owns all Pi-hole local DNS records — manual UI changes will be overwritten on next run.

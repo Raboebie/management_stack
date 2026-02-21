@@ -102,6 +102,7 @@ services:
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - ./telegraf/rocm-smi-telegraf.sh:/usr/local/bin/rocm-smi-telegraf.sh:ro
+      - ./telegraf/ollama-metrics.sh:/usr/local/bin/ollama-metrics.sh:ro
       - /proc:/hostfs/proc:ro
       - /sys:/hostfs/sys:ro
       - /etc:/hostfs/etc:ro
@@ -304,6 +305,86 @@ services:
       - "traefik.http.routers.semaphore.tls=true"
       - "traefik.http.services.semaphore.loadbalancer.server.port=3000"
 
+  # ── Ollama (LLM serving with AMD GPU) ────────────────────────────────────
+  ollama:
+    image: ollama/ollama:rocm
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "{{ ollama_port }}:11434"
+    dns:
+      - 192.168.88.1
+      - 208.67.222.222
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    security_opt:
+      - label:disable
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "{{ hsa_override_gfx_version }}"
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "{{ ollama_keep_alive }}"
+      OLLAMA_NUM_PARALLEL: "{{ ollama_num_parallel }}"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ollama.rule=Host(`ollama.home`)"
+      - "traefik.http.routers.ollama.entrypoints=websecure"
+      - "traefik.http.routers.ollama.tls=true"
+      - "traefik.http.services.ollama.loadbalancer.server.port=11434"
+
+  # ── Open WebUI (LLM chat interface) ───────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "{{ open_webui_port }}:8080"
+    environment:
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      WEBUI_AUTH: "true"
+      WEBUI_SECRET_KEY: "{{ open_webui_secret_key }}"
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - ollama
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`chat.home`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls=true"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
+
+  # ── Tabby (code completion server) ────────────────────────────────────────
+  tabby:
+    image: tabbyml/tabby:latest
+    container_name: tabby
+    restart: unless-stopped
+    ports:
+      - "{{ tabby_port }}:8080"
+    dns:
+      - 192.168.88.1
+      - 208.67.222.222
+    command: serve
+    volumes:
+      - tabby-data:/data
+      - ./tabby/config.toml:/data/config.toml:z,ro
+    depends_on:
+      - ollama
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tabby.rule=Host(`tabby.home`)"
+      - "traefik.http.routers.tabby.entrypoints=websecure"
+      - "traefik.http.routers.tabby.tls=true"
+      - "traefik.http.services.tabby.loadbalancer.server.port=8080"
+
 volumes:
   influxdb-data:
   grafana-data:
@@ -313,6 +394,9 @@ volumes:
   promtail-positions:
   portainer-data:
   semaphore-data:
+  ollama-data:
+  open-webui-data:
+  tabby-data:
 
 networks:
   {{ stack_network }}:

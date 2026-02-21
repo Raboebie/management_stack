@@ -32,4 +32,19 @@ object Host NodeName {
     http_uri = "/"
     http_port = 3001
   }
+  vars.http_vhosts["Ollama"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/api/tags"
+    http_port = {{ ollama_port }}
+  }
+  vars.http_vhosts["OpenWebUI"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/"
+    http_port = {{ open_webui_port }}
+  }
+  vars.http_vhosts["Tabby"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/"
+    http_port = {{ tabby_port }}
+  }
 }
