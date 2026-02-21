@@ -29,13 +29,6 @@
     mode: "0755"
   loop:
     - datasources
-    - dashboards
-
-- name: Create Grafana dashboards directory
-  ansible.builtin.file:
-    path: "{{ stack_dir }}/grafana/dashboards"
-    state: directory
-    mode: "0755"
 
 # ── Templates ────────────────────────────────────────────────────────────────
 
@@ -67,6 +60,13 @@
     mode: "0644"
   register: icinga2_constants
 
+- name: Deploy Icinga2 hosts.conf
+  ansible.builtin.template:
+    src: icinga2/conf.d/hosts.conf.j2
+    dest: "{{ stack_dir }}/icinga2/conf.d/hosts.conf"
+    mode: "0644"
+  register: icinga2_hosts
+
 - name: Deploy Icinga2 InfluxDB2 writer feature
   ansible.builtin.template:
     src: icinga2/features/influxdb2.conf.j2
@@ -85,20 +85,6 @@
   ansible.builtin.template:
     src: grafana/provisioning/datasources/influxdb.yml.j2
     dest: "{{ stack_dir }}/grafana/provisioning/datasources/influxdb.yml"
-    mode: "0644"
-  notify: Restart monitoring stack
-
-- name: Deploy Grafana dashboard provider
-  ansible.builtin.template:
-    src: grafana/provisioning/dashboards/provider.yml.j2
-    dest: "{{ stack_dir }}/grafana/provisioning/dashboards/provider.yml"
-    mode: "0644"
-  notify: Restart monitoring stack
-
-- name: Deploy Grafana system monitoring dashboard
-  ansible.builtin.copy:
-    src: grafana/dashboards/system-monitoring.json
-    dest: "{{ stack_dir }}/grafana/dashboards/system-monitoring.json"
     mode: "0644"
   notify: Restart monitoring stack
 
@@ -148,3 +134,63 @@
       icinga2:/data/etc/icinga2/features-enabled/icingadb.conf
   when: icinga2_icingadb.changed or compose_up.changed
   notify: Restart icinga2
+
+- name: Copy Icinga2 hosts.conf into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/conf.d/hosts.conf
+      icinga2:/data/etc/icinga2/conf.d/hosts.conf
+  when: icinga2_hosts.changed or compose_up.changed
+  notify: Restart icinga2
+
+# ── Grafana dashboard provisioning via API ───────────────────────────────────
+
+- name: Wait for Grafana API to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:{{ grafana_port }}/api/health"
+    method: GET
+    status_code: 200
+  register: grafana_health
+  retries: 20
+  delay: 3
+  until: grafana_health.status == 200
+
+- name: Get InfluxDB datasource UID from Grafana
+  ansible.builtin.uri:
+    url: "http://localhost:{{ grafana_port }}/api/datasources/name/InfluxDB"
+    method: GET
+    user: "{{ grafana_admin_user }}"
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    status_code: 200
+  register: grafana_datasource
+  retries: 10
+  delay: 3
+  until: grafana_datasource.status == 200
+
+- name: Read dashboard JSON file
+  ansible.builtin.slurp:
+    src: "{{ role_path }}/files/grafana/dashboards/system-monitoring.json"
+  register: dashboard_json_raw
+
+- name: Deploy Grafana dashboard via API
+  ansible.builtin.uri:
+    url: "http://localhost:{{ grafana_port }}/api/dashboards/db"
+    method: POST
+    user: "{{ grafana_admin_user }}"
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {
+        "dashboard": {{ dashboard_json_raw.content | b64decode | regex_replace('"uid":\s*""', '"uid": "' + grafana_datasource.json.uid + '"') }},
+        "overwrite": true,
+        "message": "Deployed by Ansible"
+      }
+    status_code:
+      - 200
+  register: grafana_dashboard_result
+  changed_when: true

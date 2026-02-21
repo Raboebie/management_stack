@@ -30,8 +30,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:z,ro
     depends_on:
       - influxdb
     networks:
@@ -96,6 +95,8 @@ services:
     environment:
       ICINGA_MASTER: 1
       ICINGA_CN: icinga2-master
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - icinga2-data:/data
     depends_on:
@@ -151,6 +152,7 @@ services:
       icingaweb.resources.icingaweb_db.password: "{{ postgres_password }}"
       icingaweb.modules.icingadb.config.icingadb.resource: icingadb
       icingaweb.modules.icingadb.redis.redis1.host: icingadb-redis
+      icingaweb.modules.icingadb.redis.redis1.port: "6379"
       icingaweb.modules.icingadb.commandtransports.icinga2.transport: api
       icingaweb.modules.icingadb.commandtransports.icinga2.host: icinga2
       icingaweb.modules.icingadb.commandtransports.icinga2.port: "5665"
