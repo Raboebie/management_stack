@@ -1,0 +1,77 @@
+---
+- name: Authenticate with Pi-hole API
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/auth"
+    method: POST
+    body_format: json
+    body:
+      password: "{{ pihole_admin_password }}"
+    status_code: 200
+  register: pihole_auth
+  no_log: true
+
+- name: Set session SID
+  ansible.builtin.set_fact:
+    pihole_sid: "{{ pihole_auth.json.session.sid }}"
+  no_log: true
+
+- name: Fetch current DNS hosts
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/config/dns/hosts"
+    method: GET
+    headers:
+      X-FTL-SID: "{{ pihole_sid }}"
+    status_code: 200
+  register: pihole_current_hosts
+
+- name: Build desired DNS hosts list
+  ansible.builtin.set_fact:
+    pihole_desired_hosts: >-
+      {{ pihole_dns_records | map(attribute='hostname')
+         | map('regex_replace', '^(.*)$', host_ip ~ ' \1.' ~ dns_domain)
+         | list }}
+
+- name: Extract current hosts list
+  ansible.builtin.set_fact:
+    pihole_current_hosts_list: "{{ pihole_current_hosts.json.config.dns.hosts | default([]) }}"
+
+- name: Determine DNS entries to add
+  ansible.builtin.set_fact:
+    pihole_hosts_to_add: "{{ pihole_desired_hosts | difference(pihole_current_hosts_list) }}"
+    pihole_hosts_to_remove: "{{ pihole_current_hosts_list | difference(pihole_desired_hosts) }}"
+
+- name: Add DNS host entries
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/config/dns/hosts/{{ item | urlencode }}"
+    method: PUT
+    headers:
+      X-FTL-SID: "{{ pihole_sid }}"
+    status_code: [200, 201]
+  loop: "{{ pihole_hosts_to_add }}"
+  when: pihole_hosts_to_add | length > 0
+
+- name: Remove stale DNS host entries
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/config/dns/hosts/{{ item | urlencode }}"
+    method: DELETE
+    headers:
+      X-FTL-SID: "{{ pihole_sid }}"
+    status_code: [200, 204]
+  loop: "{{ pihole_hosts_to_remove }}"
+  when: pihole_hosts_to_remove | length > 0
+
+- name: DNS update result
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Added ' ~ pihole_hosts_to_add | length ~ ', removed ' ~ pihole_hosts_to_remove | length ~ ' DNS records'
+         if (pihole_hosts_to_add | length > 0 or pihole_hosts_to_remove | length > 0)
+         else 'DNS records already up to date' }}
+
+- name: Logout Pi-hole session
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/auth"
+    method: DELETE
+    headers:
+      X-FTL-SID: "{{ pihole_sid }}"
+    status_code: [200, 204, 410]
+  no_log: true

@@ -67,6 +67,20 @@
     mode: "0644"
   register: icinga2_hosts
 
+- name: Deploy Icinga2 services.conf
+  ansible.builtin.template:
+    src: icinga2/conf.d/services.conf.j2
+    dest: "{{ stack_dir }}/icinga2/conf.d/services.conf"
+    mode: "0644"
+  register: icinga2_services
+
+- name: Deploy Icinga2 api-users.conf
+  ansible.builtin.template:
+    src: icinga2/conf.d/api-users.conf.j2
+    dest: "{{ stack_dir }}/icinga2/conf.d/api-users.conf"
+    mode: "0644"
+  register: icinga2_api_users
+
 - name: Deploy Icinga2 InfluxDB2 writer feature
   ansible.builtin.template:
     src: icinga2/features/influxdb2.conf.j2
@@ -142,6 +156,24 @@
       {{ stack_dir }}/icinga2/conf.d/hosts.conf
       icinga2:/data/etc/icinga2/conf.d/hosts.conf
   when: icinga2_hosts.changed or compose_up.changed
+  notify: Restart icinga2
+
+- name: Copy Icinga2 services.conf into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/conf.d/services.conf
+      icinga2:/data/etc/icinga2/conf.d/services.conf
+  when: icinga2_services.changed or compose_up.changed
+  notify: Restart icinga2
+
+- name: Copy Icinga2 api-users.conf into container
+  ansible.builtin.command:
+    cmd: >-
+      docker cp
+      {{ stack_dir }}/icinga2/conf.d/api-users.conf
+      icinga2:/data/etc/icinga2/conf.d/api-users.conf
+  when: icinga2_api_users.changed or compose_up.changed
   notify: Restart icinga2
 
 # ── Grafana dashboard provisioning via API ───────────────────────────────────

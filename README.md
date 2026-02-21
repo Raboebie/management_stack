@@ -12,7 +12,8 @@ Host (Fedora 43)
 |   writes to --> InfluxDB 2.x
 |
 +-- Icinga2
-|   Service/host checks (hostalive, disk, load, procs, ssh, http)
+|   Service checks (ping, load, procs, HTTP for Grafana/IcingaWeb2/InfluxDB)
+|   Targets Docker host via bridge gateway (172.17.0.1)
 |   InfluxDB2Writer --> InfluxDB 2.x
 |   IcingaDB feature --> Redis
 |
@@ -44,6 +45,22 @@ Host (Fedora 43)
 
 Docker (moby-engine), docker-compose, and rocm-smi are installed automatically by the playbook.
 
+## DNS
+
+The playbook registers `.home` DNS records in Pi-hole v6 so services are reachable by name:
+
+| Hostname | Service | URL |
+|----------|---------|-----|
+| `grafana.home` | Grafana | `http://grafana.home:3000` |
+| `influxdb.home` | InfluxDB | `http://influxdb.home:8086` |
+| `icinga.home` | IcingaWeb2 | `http://icinga.home:8081` |
+| `icinga-api.home` | Icinga2 API | `https://icinga-api.home:5665` |
+| `pihole.home` | Pi-hole | `http://pihole.home:8181` |
+
+All records point to the host IP (`192.168.88.100`). DNS only maps hostname to IP; ports are still required in URLs.
+
+Records are managed declaratively via the Pi-hole v6 REST API — the `pihole_dns` role owns all local DNS entries and will overwrite manual changes on next run.
+
 ## Quick Start
 
 ```bash
@@ -56,9 +73,9 @@ ansible-vault edit group_vars/all.yml
 ansible-playbook playbook.yml
 
 # 3. Access
-#    Grafana:    http://localhost:3000
-#    IcingaWeb2: http://localhost:8081
-#    InfluxDB:   http://localhost:8086
+#    Grafana:    http://grafana.home:3000
+#    IcingaWeb2: http://icinga.home:8081
+#    InfluxDB:   http://influxdb.home:8086
 ```
 
 ## Credentials
@@ -95,6 +112,8 @@ monitoring-stack/
 +-- roles/
     +-- prerequisites/
     |   +-- tasks/main.yml         # Docker, rocm-smi installation
+    +-- pihole_dns/
+    |   +-- tasks/main.yml         # Register .home DNS records in Pi-hole v6
     +-- monitoring_stack/
         +-- tasks/main.yml         # Deploy configs, start stack, configure Icinga2
         +-- handlers/main.yml      # Restart handlers
@@ -104,12 +123,15 @@ monitoring-stack/
         |   +-- rocm-smi-telegraf.sh.j2
         |   +-- icinga2/
         |   |   +-- constants.conf.j2
+        |   |   +-- conf.d/
+        |   |   |   +-- hosts.conf.j2
+        |   |   |   +-- services.conf.j2
+        |   |   |   +-- api-users.conf.j2
         |   |   +-- features/
         |   |       +-- influxdb2.conf.j2
         |   |       +-- icingadb.conf.j2
         |   +-- grafana/provisioning/
         |       +-- datasources/influxdb.yml.j2
-        |       +-- dashboards/provider.yml.j2
         +-- files/
             +-- grafana/dashboards/
                 +-- system-monitoring.json
@@ -134,7 +156,13 @@ Edit via `ansible-vault edit group_vars/all.yml`:
 | `icinga2_api_user` | icingaweb2 | Icinga2 API username |
 | `icinga2_api_password` | (generated) | Icinga2 API password |
 | `icinga2_ticket_salt` | (generated) | Icinga2 ticket salt |
+| `icinga2_host_address` | 172.17.0.1 | IPv4 address Icinga2 checks target (Docker host gateway) |
 | `icingaweb2_admin_password` | (generated) | IcingaWeb2 admin password |
+| `pihole_api_url` | http://localhost:8181 | Pi-hole API base URL |
+| `pihole_admin_password` | (set in vault) | Pi-hole admin password |
+| `host_ip` | 192.168.88.100 | Host IP for DNS records |
+| `dns_domain` | home | Domain suffix for DNS records |
+| `pihole_dns_records` | (list) | Hostnames to register (e.g., grafana, icinga) |
 | `rocm_smi_path` | /usr/bin/rocm-smi | Path to rocm-smi binary |
 | `stack_dir` | ~/monitoring-stack/stack | Docker Compose deploy directory |
 | `grafana_port` | 3000 | Grafana port |
@@ -152,7 +180,7 @@ The pre-built "System Monitoring" dashboard includes:
 - **Disk**: Usage per mountpoint (bar gauge) + over time
 - **Disk IO**: Read/Write throughput + IOPS
 - **Network**: Per-interface in/out traffic
-- **GPU**: Temperature, Utilization (gauge + time series), VRAM usage, Fan speed, Power draw
+- **GPU**: Temperature, Utilization (gauge + time series), VRAM usage, Power draw
 
 ## AMD GPU Metrics
 
@@ -161,7 +189,9 @@ GPU metrics are collected via a wrapper script that:
 2. Parses the JSON output and normalizes field names
 3. Outputs clean JSON for Telegraf's exec input plugin
 
-Collected fields: `temperature_edge`, `temperature_junction`, `temperature_memory`, `gpu_use_percent`, `vram_used_percent`, `memory_activity_percent`, `fan_speed_percent`, `fan_rpm`, `power_avg`
+Collected fields: `temperature_edge`, `temperature_junction`, `temperature_memory`, `gpu_use_percent`, `vram_used_percent`, `memory_activity_percent`, `power_avg`
+
+Note: Fan speed fields (`fan_speed_percent`, `fan_rpm`) are parsed but may be absent on hardware that doesn't expose fan data.
 
 Requirements: Telegraf container runs as root with `security_opt: label:disable` (SELinux) and host PID namespace.
 

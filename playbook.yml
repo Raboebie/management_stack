@@ -5,3 +5,9 @@
   roles:
     - prerequisites
     - monitoring_stack
+
+- name: Register monitoring DNS in Pi-hole
+  hosts: localhost
+  become: false
+  roles:
+    - pihole_dns

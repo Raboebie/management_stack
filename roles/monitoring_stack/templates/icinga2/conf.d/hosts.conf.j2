@@ -4,18 +4,21 @@
 
 object Host NodeName {
   import "generic-host"
-  address = "host.docker.internal"
+  address = "{{ icinga2_host_address | default('172.17.0.1') }}"
   vars.os = "Linux"
 
   vars.http_vhosts["Grafana"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
     http_uri = "/"
     http_port = {{ grafana_port }}
   }
   vars.http_vhosts["IcingaWeb2"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
     http_uri = "/"
     http_port = {{ icingaweb2_port }}
   }
   vars.http_vhosts["InfluxDB"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
     http_uri = "/health"
     http_port = {{ influxdb_port }}
   }
