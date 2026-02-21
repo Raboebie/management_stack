@@ -1,4 +1,37 @@
 services:
+  # ── Traefik (reverse proxy + TLS) ────────────────────────────────────────
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - label:disable
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network={{ stack_network }}"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.http.tls=true"
+      - "--providers.file.filename=/certs/traefik-tls.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:z,ro
+      - ./certs:/certs:z,ro
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.home`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.service=api@internal"
+
   # ── InfluxDB 2.x ─────────────────────────────────────────────────────────
   influxdb:
     image: influxdb:2
@@ -17,6 +50,12 @@ services:
       - influxdb-data:/var/lib/influxdb2
     networks:
       - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.influxdb.rule=Host(`influxdb.home`)"
+      - "traefik.http.routers.influxdb.entrypoints=websecure"
+      - "traefik.http.routers.influxdb.tls=true"
+      - "traefik.http.services.influxdb.loadbalancer.server.port=8086"
 
   # ── Grafana ──────────────────────────────────────────────────────────────
   grafana:
@@ -33,8 +72,15 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:z,ro
     depends_on:
       - influxdb
+      - loki
     networks:
       - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.home`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
 
   # ── Telegraf ─────────────────────────────────────────────────────────────
   telegraf:
@@ -171,12 +217,102 @@ services:
       - postgres
     networks:
       - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.icingaweb2.rule=Host(`icinga.home`)"
+      - "traefik.http.routers.icingaweb2.entrypoints=websecure"
+      - "traefik.http.routers.icingaweb2.tls=true"
+      - "traefik.http.services.icingaweb2.loadbalancer.server.port=8080"
+
+  # ── Loki (log aggregation) ──────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.4
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki/local-config.yaml:/etc/loki/local-config.yaml:z,ro
+      - loki-data:/loki
+    networks:
+      - {{ stack_network }}
+
+  # ── Promtail (log collector) ────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:3.4
+    container_name: promtail
+    restart: unless-stopped
+    user: root
+    security_opt:
+      - label:disable
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./promtail/config.yaml:/etc/promtail/config.yaml:z,ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - promtail-positions:/tmp
+    depends_on:
+      - loki
+    networks:
+      - {{ stack_network }}
+
+  # ── Portainer (Docker management UI) ────────────────────────────────────
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:z
+      - portainer-data:/data
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.home`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+  # ── Semaphore (Ansible web UI) ──────────────────────────────────────────
+  semaphore:
+    image: semaphoreui/semaphore:latest
+    container_name: semaphore
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      SEMAPHORE_DB_DIALECT: bolt
+      SEMAPHORE_ADMIN: "{{ semaphore_admin_user }}"
+      SEMAPHORE_ADMIN_PASSWORD: "{{ semaphore_admin_password }}"
+      SEMAPHORE_ADMIN_NAME: "Admin"
+      SEMAPHORE_ADMIN_EMAIL: "admin@localhost"
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: "{{ semaphore_access_key }}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - semaphore-data:/var/lib/semaphore
+    networks:
+      - {{ stack_network }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.semaphore.rule=Host(`semaphore.home`)"
+      - "traefik.http.routers.semaphore.entrypoints=websecure"
+      - "traefik.http.routers.semaphore.tls=true"
+      - "traefik.http.services.semaphore.loadbalancer.server.port=3000"
 
 volumes:
   influxdb-data:
   grafana-data:
   postgres-data:
   icinga2-data:
+  loki-data:
+  promtail-positions:
+  portainer-data:
+  semaphore-data:
 
 networks:
   {{ stack_network }}:

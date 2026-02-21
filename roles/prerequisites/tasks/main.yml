@@ -29,6 +29,53 @@
     name: rocm-smi
     state: present
 
+- name: Install mkcert and NSS tools (for local TLS CA)
+  ansible.builtin.dnf:
+    name:
+      - mkcert
+      - nss-tools
+    state: present
+
+- name: Install local CA with mkcert (system trust store)
+  ansible.builtin.command:
+    cmd: mkcert -install
+  register: mkcert_install
+  changed_when: "'The local CA is already installed' not in mkcert_install.stderr"
+
+- name: Add mkcert CA to OS trust anchors
+  ansible.builtin.copy:
+    src: /root/.local/share/mkcert/rootCA.pem
+    dest: /etc/pki/ca-trust/source/anchors/mkcert-ca.pem
+    mode: "0644"
+    remote_src: true
+  register: ca_anchor
+
+- name: Update OS CA trust store
+  ansible.builtin.command:
+    cmd: update-ca-trust
+  when: ca_anchor.changed
+
+- name: Copy mkcert CA to invoking user for browser trust
+  ansible.builtin.copy:
+    src: "/root/.local/share/mkcert/{{ item }}"
+    dest: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.local/share/mkcert/{{ item }}"
+    owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+    mode: "0600"
+    remote_src: true
+  loop:
+    - rootCA.pem
+    - rootCA-key.pem
+  when: ansible_env.SUDO_USER is defined
+
+- name: Install mkcert CA into user browser trust stores
+  ansible.builtin.command:
+    cmd: mkcert -install
+  become: true
+  become_user: "{{ ansible_env.SUDO_USER }}"
+  register: mkcert_user_install
+  changed_when: "'already installed' not in mkcert_user_install.stderr"
+  when: ansible_env.SUDO_USER is defined
+
 - name: Check rocm-smi is available
   ansible.builtin.command:
     cmd: "{{ rocm_smi_path }} --showtemp"

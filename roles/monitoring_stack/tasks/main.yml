@@ -30,6 +30,24 @@
   loop:
     - datasources
 
+- name: Create Loki config directory
+  ansible.builtin.file:
+    path: "{{ stack_dir }}/loki"
+    state: directory
+    mode: "0755"
+
+- name: Create Promtail config directory
+  ansible.builtin.file:
+    path: "{{ stack_dir }}/promtail"
+    state: directory
+    mode: "0755"
+
+- name: Create certs directory
+  ansible.builtin.file:
+    path: "{{ stack_dir }}/certs"
+    state: directory
+    mode: "0755"
+
 # ── Templates ────────────────────────────────────────────────────────────────
 
 - name: Deploy docker-compose.yml
@@ -101,6 +119,48 @@
     dest: "{{ stack_dir }}/grafana/provisioning/datasources/influxdb.yml"
     mode: "0644"
   notify: Restart monitoring stack
+
+- name: Deploy Grafana Loki datasource provisioning
+  ansible.builtin.template:
+    src: grafana/provisioning/datasources/loki.yml.j2
+    dest: "{{ stack_dir }}/grafana/provisioning/datasources/loki.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Deploy Loki config
+  ansible.builtin.template:
+    src: loki/local-config.yaml.j2
+    dest: "{{ stack_dir }}/loki/local-config.yaml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Deploy Promtail config
+  ansible.builtin.template:
+    src: promtail/config.yaml.j2
+    dest: "{{ stack_dir }}/promtail/config.yaml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Deploy Traefik TLS config
+  ansible.builtin.template:
+    src: traefik/tls.yml.j2
+    dest: "{{ stack_dir }}/certs/traefik-tls.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+# ── TLS certificate generation ───────────────────────────────────────────────
+
+- name: Generate TLS certificate with mkcert
+  ansible.builtin.command:
+    cmd: >-
+      mkcert
+      -cert-file {{ stack_dir }}/certs/_wildcard.home.pem
+      -key-file {{ stack_dir }}/certs/_wildcard.home-key.pem
+      "*.home"
+      {% for record in pihole_dns_records %}
+      {{ record.hostname }}.{{ dns_domain }}
+      {% endfor %}
+    creates: "{{ stack_dir }}/certs/_wildcard.home.pem"
 
 # ── Start the stack ──────────────────────────────────────────────────────────
 

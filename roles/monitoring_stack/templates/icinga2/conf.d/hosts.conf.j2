@@ -22,4 +22,14 @@ object Host NodeName {
     http_uri = "/health"
     http_port = {{ influxdb_port }}
   }
+  vars.http_vhosts["Portainer"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/"
+    http_port = 9000
+  }
+  vars.http_vhosts["Semaphore"] = {
+    http_address = "{{ icinga2_host_address | default('172.17.0.1') }}"
+    http_uri = "/"
+    http_port = 3001
+  }
 }
